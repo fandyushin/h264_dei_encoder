@@ -1,0 +1,30 @@
+/**************************************************************************
+$Id: config.bld 1030 2015-09-09 10:18:12Z alexvol $
+$HeadURL: http://server/svn/Test_Boards/daVinci_Encoder/trunk/Firmware/daVinci_ARM/test/videocap/videoloop/config.bld $
+$LastChangedRevision: 1030 $
+$LastChangedDate: 2015-09-09 13:18:12 +0300 (Wed, 09 Sep 2015) $
+$LastChangedBy: alexvol $
+***************************************************************************/
+
+/* location of your C6000 codegen tools */
+var C64P = xdc.useModule('ti.targets.C64P');
+C64P.rootDir = java.lang.System.getenv("CODEGEN_INSTALL_DIR");
+
+/* location of your Montavista Arm9 tools */
+var MVArm9 = xdc.useModule('gnu.targets.MVArm9');
+MVArm9.rootDir = java.lang.System.getenv("MVTOOL_DIR");
+MVArm9.ccOpts.prefix = "-g";
+MVArm9.ccOpts.suffix = "";
+
+/* location of the Codec Sourcery Arm9 tools */
+var GCArmv5T = xdc.useModule('gnu.targets.arm.GCArmv5T');
+GCArmv5T.LONGNAME = 'bin/arm-none-linux-gnueabi-gcc';
+GCArmv5T.platform = "ti.platforms.evm3530";
+GCArmv5T.rootDir = java.lang.System.getenv("CSTOOL_DIR");
+
+/*
+ *  ======== Build.targets ========
+ * list of targets (ISAs + compilers) to build for
+ */
+Build.targets = [
+];
