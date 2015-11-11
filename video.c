@@ -74,7 +74,7 @@ Void *videoThrFxn(Void *arg)
 
 	h264DynParams.idrFrameInterval = 15;
 
-	hVe1 = Venc1_create(hEngine, envp->videoEncoder,
+	hVe1 = Venc1_create(envp->hEngine, envp->videoEncoder,
 			(IVIDENC1_Params *) &h264Params,
 			(IVIDENC1_DynamicParams *) &h264DynParams);
 	if (hVe1 == NULL) {
@@ -155,6 +155,21 @@ Void *videoThrFxn(Void *arg)
 	}
 
 cleanup:
+
+	/* Make sure the other threads aren't waiting for us */
+	Rendezvous_force(envp->hRendezvousInit);
+	Rendezvous_force(envp->hRendezvousWriter);
+
+	/* Make sure the other threads aren't waiting for init to complete */
+	Rendezvous_meet(envp->hRendezvousCleanup);
+
+	if (hVidBufTab) {
+		BufTab_delete(hVidBufTab);
+	}
+
+	if (hVe1) {
+		Venc1_delete(hVe1);
+	}
 
 	return status;
 }
