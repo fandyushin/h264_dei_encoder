@@ -29,28 +29,30 @@ Void *videoThrFxn(Void *arg)
 
 	ColorSpace_Type colorSpace = ColorSpace_YUV420PSEMI;
 
+	Int bufSize = 0;
+
 	Void *status = THREAD_SUCCESS;
 
 	/* Initialization */
-	params->maxWidth = envp->imageWidth;
-	params->maxHeight = Dmai_roundUp(envp->imageHeight, CODECHEIGHTALIGN);
-	params->inputChromaFormat = XDM_YUV_420SP;
-	params->reconChromaFormat = XDM_YUV_420SP;
-	params->maxFrameRate = envp->videoFrameRate;
-	params->encodingPreset = XDM_USER_DEFINED;
-	params->rateControlPreset = IVIDEO_USER_DEFINED;
-	params->maxBitRate = 10000000;
+	params.maxWidth = envp->imageWidth;
+	params.maxHeight = envp->imageHeight;
+	params.inputChromaFormat = XDM_YUV_420SP;
+	params.reconChromaFormat = XDM_YUV_420SP;
+	params.maxFrameRate = envp->videoFrameRate;
+	params.encodingPreset = XDM_USER_DEFINED;
+	params.rateControlPreset = IVIDEO_USER_DEFINED;
+	params.maxBitRate = 10000000;
 
-	dynParams->targetBitRate = envp->videoBitRate*0.9;
-	dynParams->inputWidth = envp->imageWidth;
-	dynParams->captureWidth = Dmai_roundUp(BufferGfx_calcLineLength(envp->imageWidth, colorSpace), 32);
-	dynParams->inputHeight = envp->imageHeight;
-	dynParams->refFrameRate = params->maxFrameRate;
-	dynParams->targetFrameRate = params->maxFrameRate;
-	dynParams->intraFrameInterval = 0;
-	dynParams->interFrameInterval = 0;
+	dynParams.targetBitRate = envp->videoBitRate*0.9;
+	dynParams.inputWidth = envp->imageWidth;
+	dynParams.captureWidth = Dmai_roundUp(BufferGfx_calcLineLength(envp->imageWidth, colorSpace), 32);
+	dynParams.inputHeight = envp->imageHeight;
+	dynParams.refFrameRate = params.maxFrameRate;
+	dynParams.targetFrameRate = params.maxFrameRate;
+	dynParams.intraFrameInterval = 0;
+	dynParams.interFrameInterval = 0;
 
-	h264Params.videncParams = *params;
+	h264Params.videncParams = params;
 	h264Params.videncParams.size = sizeof(IH264VENC_Params);
 	h264Params.encQuality = 1;
 	h264Params.enableDDRbuff = 1; /* Uses DDR instead of VICP buffers */
@@ -58,7 +60,7 @@ Void *videoThrFxn(Void *arg)
 	h264Params.enableVUIparams = (0x1 << 1);
 	h264Params.videncParams.inputContentType = IVIDEO_PROGRESSIVE;
 
-	h264DynParams.videncDynamicParams = *dynParams;
+	h264DynParams.videncDynamicParams = dynParams;
 	h264DynParams.videncDynamicParams.size = sizeof(IH264VENC_DynamicParams);
 
 	h264DynParams.VUI_Buffer = &VUI_Buffer;
@@ -67,7 +69,7 @@ Void *videoThrFxn(Void *arg)
 	h264DynParams.VUI_Buffer->videoSignalTypePresentFlag = 0;
 	h264DynParams.VUI_Buffer->timingInfoPresentFlag = 1;
 	h264DynParams.VUI_Buffer->numUnitsInTicks = 1;
-	h264DynParams.VUI_Buffer->timeScale = params->maxFrameRate / 1000;
+	h264DynParams.VUI_Buffer->timeScale = params.maxFrameRate / 1000;
 	h264DynParams.VUI_Buffer->fixedFrameRateFlag = 1; 
 	h264DynParams.VUI_Buffer->nalHrdParameterspresentFlag = 1;
 	h264DynParams.VUI_Buffer->picStructPresentFlag = 1;

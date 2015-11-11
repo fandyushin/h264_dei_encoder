@@ -6,6 +6,7 @@
 #include <ti/sdo/dmai/Fifo.h>
 #include <ti/sdo/dmai/Pause.h>
 #include <ti/sdo/dmai/Rendezvous.h>
+#include <ti/sdo/ce/Engine.h>
 
 /* Environment passed when creating the thread */
 typedef struct VideoEnv {
@@ -20,7 +21,7 @@ typedef struct VideoEnv {
     Fifo_Handle hVideoOutFifo;
 
     Char *videoEncoder;
-    Engine_handle hEngine;
+    Engine_Handle hEngine;
     
     Int32 outBufSize;
     Int videoBitRate;

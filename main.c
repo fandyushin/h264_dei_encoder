@@ -35,11 +35,15 @@ Int main(Int argc, Char *argv[])
 
 	Rendezvous_Attrs rzvAttrs = Rendezvous_Attrs_DEFAULT;
 	Fifo_Attrs fAttrs = Fifo_Attrs_DEFAULT;
+    Pause_Attrs pAttrs = Pause_Attrs_DEFAULT;
 	Engine_Handle hEngine = NULL;
 	Rendezvous_Handle hRendezvousInit = NULL;
 	Rendezvous_Handle hRendezvousCleanup = NULL;
     Rendezvous_Handle hRendezvousWriter = NULL;
 
+    Pause_Handle hPauseProcess = NULL;
+
+    struct sched_param  schedParam;
 	pthread_t captureThread;
 	pthread_t deiThread;
 	pthread_t videoThread;
@@ -84,6 +88,12 @@ Int main(Int argc, Char *argv[])
     }
 
     initMask |= LOGSINITIALIZED;
+
+    hPauseProcess = Pause_create(&pAttrs);
+    if (hPauseProcess == NULL) {
+        ERR("Failed to create Pause object\n");
+        cleanup(EXIT_FAILURE);
+    }
 
     /* Determine the number of threads needing synchronization */
     numThreads = 5;
@@ -133,9 +143,9 @@ Int main(Int argc, Char *argv[])
 	}
 
     /* Create the writer fifos */
-    writerEnv.hInFifo = Fifo_create(&fAttrs);
-    writerEnv.hOutFifo = Fifo_create(&fAttrs);
-    if (writerEnv.hInFifo == NULL || writerEnv.hOutFifo == NULL) {
+    writerEnv.hWriterInFifo = Fifo_create(&fAttrs);
+    writerEnv.hWriterOutFifo = Fifo_create(&fAttrs);
+    if (writerEnv.hWriterInFifo == NULL || writerEnv.hWriterOutFifo == NULL) {
         ERR("Failed to open display fifos\n");
         cleanup(EXIT_FAILURE);
     }
@@ -177,11 +187,9 @@ Int main(Int argc, Char *argv[])
     videoEnv.hRendezvousCleanup = hRendezvousCleanup;
     videoEnv.hRendezvousWriter = hRendezvousWriter;
     videoEnv.hPauseProcess = hPauseProcess;
-    videoEnv.hWriterOutFifo = writerEnv.hOutFifo;
-    videoEnv.hWriterInFifo = writerEnv.hInFifo;
+    videoEnv.hWriterOutFifo = writerEnv.hWriterOutFifo;
+    videoEnv.hWriterInFifo = writerEnv.hWriterInFifo;
     videoEnv.videoEncoder = "h264enc";
-    videoEnv.params = args.videoEncoder->params;
-    videoEnv.dynParams = args.videoEncoder->dynParams;
     videoEnv.videoBitRate = 2000000;
     videoEnv.imageWidth = 704;
     videoEnv.imageHeight = 576;
@@ -243,8 +251,16 @@ cleanup:
         }
     }
 
-    if (initMask & DISPLAYTHREADCREATED) {
-        if (pthread_join(displayThread, &ret) == 0) {
+    if (initMask & VIDEOTHREADCREATED) {
+        if (pthread_join(videoThread, &ret) == 0) {
+            if (ret == THREAD_FAILURE) {
+                status = EXIT_FAILURE;
+            }
+        }
+    }
+
+    if (initMask & WRITERTHREADCREATED) {
+        if (pthread_join(writerThread, &ret) == 0) {
             if (ret == THREAD_FAILURE) {
                 status = EXIT_FAILURE;
             }
@@ -259,12 +275,20 @@ cleanup:
         Fifo_delete(captureEnv.hCaptureOutFifo);
     }
 
-    if (displayEnv.hDisplayInFifo) {
-        Fifo_delete(displayEnv.hDisplayInFifo);
+    if (videoEnv.hVideoInFifo) {
+        Fifo_delete(videoEnv.hVideoInFifo);
     }
 
-	if (displayEnv.hDisplayOutFifo) {
-        Fifo_delete(displayEnv.hDisplayOutFifo);
+	if (videoEnv.hVideoOutFifo) {
+        Fifo_delete(videoEnv.hVideoOutFifo);
+    }
+
+    if (writerEnv.hWriterInFifo) {
+        Fifo_delete(writerEnv.hWriterInFifo);
+    }
+
+    if (writerEnv.hWriterOutFifo) {
+        Fifo_delete(writerEnv.hWriterOutFifo);
     }
 
     if (hEngine) {

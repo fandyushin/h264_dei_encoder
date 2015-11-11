@@ -32,7 +32,7 @@ XDC_CFLAGS	= $(XDC_CFG)/compiler.opt
 XDC_LFILE	= $(XDC_CFG)/linker.cmd
 
 # Input configuration file
-XDC_CFGFILE	= videoloop_dei.cfg
+XDC_CFGFILE	= h264_dei.cfg
 
 # Platform (board) to build for
 XDC_PLATFORM = ti.platforms.evmDM365
