@@ -14,12 +14,16 @@
 #include "main.h"
 #include "capture.h"
 #include "dei.h"
-#include "display.h"
+#include "video.h"
+#include "writer.h"
 
 #define LOGSINITIALIZED 0x1
 #define CAPTURETHREADCREATED 0x20
 #define DEITHREADCRETED 0x40
-#define DISPLAYTHREADCREATED 0x80
+#define WRITERTHREADCREATED 0x80
+#define VIDEOTHREADCREATED 0x100
+
+#define VIDEO_THREAD_PRIORITY   sched_get_priority_max(SCHED_FIFO) - 1
 
 /* Global variable declarations for this application */
 GlobalData gbl = GBL_DATA_INIT;
@@ -34,14 +38,17 @@ Int main(Int argc, Char *argv[])
 	Engine_Handle hEngine = NULL;
 	Rendezvous_Handle hRendezvousInit = NULL;
 	Rendezvous_Handle hRendezvousCleanup = NULL;
+    Rendezvous_Handle hRendezvousWriter = NULL;
 
 	pthread_t captureThread;
 	pthread_t deiThread;
-	pthread_t displayThread;
+	pthread_t videoThread;
+    pthread_t writerThread;
 
 	CaptureEnv captureEnv;
 	DeiEnv deiEnv;
-	DisplayEnv displayEnv;
+	VideoEnv videoEnv;
+    WriterEnv writerEnv;
 
 	pthread_attr_t attr;
     Int numThreads;
@@ -55,10 +62,11 @@ Int main(Int argc, Char *argv[])
     /* Zero out the thread environments */
     Dmai_clear(captureEnv);
     Dmai_clear(deiEnv);
-    Dmai_clear(displayEnv);
+    Dmai_clear(videoEnv);
+    Dmai_clear(writerEnv);
 
     /* Initialize the mutex which protects the global data */
-    //pthread_mutex_init(&gbl.mutex, NULL);
+    /*pthread_mutex_init(&gbl.mutex, NULL);*/
 
     /* Initialize Codec Engine runtime */
     CERuntime_init();
@@ -78,12 +86,13 @@ Int main(Int argc, Char *argv[])
     initMask |= LOGSINITIALIZED;
 
     /* Determine the number of threads needing synchronization */
-    numThreads = 4;
+    numThreads = 5;
 
     /* Create the objects which synchronizes the thread init and cleanup */
     hRendezvousInit = Rendezvous_create(numThreads, &rzvAttrs);
     hRendezvousCleanup = Rendezvous_create(numThreads, &rzvAttrs);
-    if (hRendezvousInit == NULL || hRendezvousCleanup == NULL) {
+    hRendezvousWriter = Rendezvous_create(2, &rzvAttrs);
+    if (hRendezvousInit == NULL || hRendezvousCleanup == NULL || hRendezvousWriter == NULL) {
         ERR("Failed to create Rendezvous objects\n");
         cleanup(EXIT_FAILURE);
     }
@@ -116,12 +125,20 @@ Int main(Int argc, Char *argv[])
 	}
 
 	/* Create the display fifos */
-	displayEnv.hDisplayInFifo = Fifo_create(&fAttrs);
-	displayEnv.hDisplayOutFifo = Fifo_create(&fAttrs);
-	if (displayEnv.hDisplayInFifo == NULL || displayEnv.hDisplayOutFifo == NULL) {
+	videoEnv.hVideoInFifo = Fifo_create(&fAttrs);
+	videoEnv.hVideoOutFifo = Fifo_create(&fAttrs);
+	if (videoEnv.hVideoInFifo == NULL || videoEnv.hVideoOutFifo == NULL) {
 		ERR("Failed to open capture fifos\n");
 		cleanup(EXIT_FAILURE);
 	}
+
+    /* Create the writer fifos */
+    writerEnv.hInFifo = Fifo_create(&fAttrs);
+    writerEnv.hOutFifo = Fifo_create(&fAttrs);
+    if (writerEnv.hInFifo == NULL || writerEnv.hOutFifo == NULL) {
+        ERR("Failed to open display fifos\n");
+        cleanup(EXIT_FAILURE);
+    }
 
 	/* Capture thread */
 	captureEnv.hRendezvousInit = hRendezvousInit;
@@ -138,8 +155,8 @@ Int main(Int argc, Char *argv[])
 	deiEnv.hRendezvousCleanup = hRendezvousCleanup;
 	deiEnv.hFromCaptureFifo = captureEnv.hCaptureOutFifo;
 	deiEnv.hToCaptureFifo = captureEnv.hCaptureInFifo;
-	deiEnv.hFromDisplayFifo = displayEnv.hDisplayOutFifo;
-	deiEnv.hToDisplayFifo = displayEnv.hDisplayInFifo;
+	deiEnv.hFromDisplayFifo = videoEnv.hVideoOutFifo;
+	deiEnv.hToDisplayFifo = videoEnv.hVideoInFifo;
 	deiEnv.hEngine = hEngine;
 	if (pthread_create(&deiThread, NULL, deiThrFxn, &deiEnv)) {
 		ERR("Failed to create dei thread\n");
@@ -147,14 +164,55 @@ Int main(Int argc, Char *argv[])
 	}
 	initMask |= DEITHREADCRETED;
 
-	/* Display thread */
-	displayEnv.hRendezvousInit = hRendezvousInit;
-	displayEnv.hRendezvousCleanup = hRendezvousCleanup;
-	if (pthread_create(&displayThread, NULL, displayThrFxn, &displayEnv)) {
-		ERR("Failed to create display thread\n");
-		cleanup(EXIT_FAILURE);
-	}
-	initMask |= DEITHREADCRETED;
+	/* Video thread */
+    /* Set the video thread priority */
+    schedParam.sched_priority = VIDEO_THREAD_PRIORITY;
+    if (pthread_attr_setschedparam(&attr, &schedParam)) {
+        ERR("Failed to set scheduler parameters\n");
+        cleanup(EXIT_FAILURE);
+    }
+
+    /* Create the video thread */
+    videoEnv.hRendezvousInit = hRendezvousInit;
+    videoEnv.hRendezvousCleanup = hRendezvousCleanup;
+    videoEnv.hRendezvousWriter = hRendezvousWriter;
+    videoEnv.hPauseProcess = hPauseProcess;
+    videoEnv.hWriterOutFifo = writerEnv.hOutFifo;
+    videoEnv.hWriterInFifo = writerEnv.hInFifo;
+    videoEnv.videoEncoder = "h264enc";
+    videoEnv.params = args.videoEncoder->params;
+    videoEnv.dynParams = args.videoEncoder->dynParams;
+    videoEnv.videoBitRate = 2000000;
+    videoEnv.imageWidth = 704;
+    videoEnv.imageHeight = 576;
+    videoEnv.videoFrameRate = 25000;
+    videoEnv.hEngine = hEngine;
+
+    if (pthread_create(&videoThread, &attr, videoThrFxn, &videoEnv)) {
+        ERR("Failed to create video thread\n");
+        cleanup(EXIT_FAILURE);
+    }
+    initMask |= VIDEOTHREADCREATED;
+
+    /*
+     * Wait for the codec to be created in the video thread before
+     * launching the writer thread (otherwise we don't know which size
+     * of buffers to use).
+     */
+    Rendezvous_meet(hRendezvousWriter);    
+
+    /* Writer thread */
+    writerEnv.hRendezvousInit = hRendezvousInit;
+    writerEnv.hRendezvousCleanup = hRendezvousCleanup;
+    writerEnv.hPauseProcess = hPauseProcess;
+    writerEnv.videoFile = "/mnt/nfs/video.264";
+    writerEnv.outBufSize = videoEnv.outBufSize;
+
+    if (pthread_create(&writerThread, NULL, writerThrFxn, &writerEnv)) {
+        ERR("Failed to create writer thread\n");
+        cleanup(EXIT_FAILURE);
+    }
+    initMask |= WRITERTHREADCREATED;
 
 	Rendezvous_meet(hRendezvousInit);
 	fprintf(stderr, "Initialization complete\n");
